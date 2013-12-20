@@ -61,6 +61,7 @@ class SelfUpdater(object):
         now = time.time()
         if now - self._last_update < self.UPDATE_CHECK_PERIOD:
             return
+        self._last_update = now
         out = self._execute_command(['git', 'status', '--porcelain'])
         if any(not l.startswith('??') for l in out.splitlines()):
             self._logger.error('There are local changes to the server. '
