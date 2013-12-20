@@ -39,9 +39,8 @@ class SelfUpdater(object):
     UPDATE_CHECK_PERIOD = 3600
 
     def __init__(self):
-        self._can_update = os.path.isdir(
-            os.path.join(os.path.dirname(__file__), '.git')
-        )
+        self._path = os.path.dirname(__file__) or '.'
+        self._can_update = os.path.isdir(os.path.join(self._path, '.git'))
         self._logger = logging.getLogger('SelfUpdater')
         self._last_update = 0
         if not self._can_update:
@@ -86,18 +85,19 @@ class SelfUpdater(object):
 
     def _execute_command(self, cmd):
         try:
-            out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+            out = subprocess.check_output(cmd, stderr=subprocess.STDOUT,
+                cwd=self._path)
             return out
         except subprocess.CalledProcessError as e:
-            self._logger.error('Command "%s" failed with error code %d. Its output was:\n%s'
+            self._logger.error('Command "%s" failed with error code %d. '
+                'Its output was:\n%s'
                 % (' '.join(cmd), e.returncode, e.output))
             raise HandledException(e)
 
-    @staticmethod
-    def get_modules_mtimes():
+    def get_modules_mtimes(self):
         return dict(
             (p, os.path.getmtime(p))
-            for p in iter_modules_in_path(os.path.dirname(__file__))
+            for p in iter_modules_in_path(self._path)
         )
 
 
