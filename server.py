@@ -71,10 +71,21 @@ class SelfUpdater(object):
         out = self._execute_command(['git', 'fetch', '--no-tags'])
         # git fetch outputs nothing when it fetches nothing
         if not out:
-            return
+            # When updating from a version before submodule support, the first
+            # git fetch after update will return nothing, but submodule
+            # initialization is still needed.
+            status = self._execute_command(['git', 'submodule', 'status'])
+            if all(not line.startswith('-') for line in status.splitlines()):
+                return
         for line in out.splitlines():
             self._logger.warning(line)
         out = self._execute_command(['git', 'pull', '--ff-only'])
+        for line in out.splitlines():
+            self._logger.warning(line)
+        out = self._execute_command(['git', 'submodule', 'init'])
+        for line in out.splitlines():
+            self._logger.warning(line)
+        out = self._execute_command(['git', 'submodule', 'update'])
         for line in out.splitlines():
             self._logger.warning(line)
         new_mtimes = self.get_modules_mtimes()
