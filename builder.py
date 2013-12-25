@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import boto.sqs.message
+from boto.sqs.jsonmessage import JSONMessage
 from util  import cached_property
 from worker import Worker
 
@@ -14,11 +14,11 @@ class Job(object):
 
     @staticmethod
     def from_message(msg):
-        assert isinstance(msg, boto.sqs.message.MHMessage)
+        assert isinstance(msg, JSONMessage)
         return Job(msg['branch'], msg['changeset'])
 
     def to_message(self):
-        msg = boto.sqs.message.MHMessage()
+        msg = JSONMessage()
         msg['branch'] = self.branch
         msg['changeset'] = self.changeset
         return msg

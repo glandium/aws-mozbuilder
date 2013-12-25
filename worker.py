@@ -2,9 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import boto.sqs.message
 import logging
 import time
+from boto.sqs.jsonmessage import JSONMessage
 from botohelpers import SQSConnection
 from config import Config
 from util import cached_property
@@ -22,7 +22,7 @@ class SQSLoggingHandler(logging.Handler):
     def emit(self, record):
         if not self._queue:
             return
-        m = boto.sqs.message.MHMessage()
+        m = JSONMessage()
         m['level'] = record.levelname
         m['name'] = record.name
         m['instanceId'] = self._instanceId
@@ -53,7 +53,7 @@ class Worker(object):
     def _queue(self):
         queue = SQSConnection().get_queue(self._queue_name)
         if queue:
-            queue.set_message_class(boto.sqs.message.MHMessage)
+            queue.set_message_class(JSONMessage)
         return queue
 
     def shutdown(self):
