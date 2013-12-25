@@ -16,6 +16,7 @@ class SQSLoggingHandler(logging.Handler):
         self._queue = sqs_conn.get_queue('%s-logs' % config.type)
         self._instanceId = config.instanceId
         logging.Handler.__init__(self)
+        self._dummy_record = logging.LogRecord('', 0, '', 0, '', (), None)
 
     def emit(self, record):
         if not self._queue:
@@ -25,6 +26,10 @@ class SQSLoggingHandler(logging.Handler):
         m['name'] = record.name
         m['instanceId'] = self._instanceId
         m['message'] = record.msg
+        # Record any extra data attached to the record.
+        for key, value in record.__dict__.items():
+            if key not in self._dummy_record.__dict__:
+                m[key] = value
         self._queue.write(m)
 
 
@@ -84,8 +89,14 @@ class Worker(object):
             return
         job = Job.from_message(m)
         self._logger.warning('Starting job for changeset %s on branch %s'
-            % (job.changeset, job.branch))
+            % (job.changeset, job.branch), extra={
+                'changeset': job.changeset,
+                'branch': job.branch,
+            })
         self._logger.warning('Finished job for changeset %s on branch %s'
-            % (job.changeset, job.branch))
+            % (job.changeset, job.branch), extra={
+                'changeset': job.changeset,
+                'branch': job.branch,
+            })
         self._queue.delete_message(m)
         self._idle_since = time.time()
