@@ -29,6 +29,15 @@ class BuilderWorker(Worker):
     def _queue_name(self):
         return '%s-jobs' % self._config.type
 
+    def shutdown(self):
+        if not self._running:
+            return
+        Worker.shutdown(self)
+        if self._config.is_instance:
+            from botohelpers import AutoScaleConnection
+            AutoScaleConnection().terminate_instance(self._config.instanceId,
+                decrement_capacity=True)
+
     def _handle_message(self, msg):
         job = Job.from_message(msg)
         self._logger.warning('Starting job for changeset %s on branch %s'

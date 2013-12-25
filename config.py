@@ -29,7 +29,7 @@ class Config(Singleton):
                 return value
 
     @cached_property
-    def _is_instance(self):
+    def is_instance(self):
         try:
             socket.getaddrinfo('instance-data', 80)
             return True
@@ -39,7 +39,7 @@ class Config(Singleton):
     @cached_property
     def _identity(self):
         try:
-            if self._is_instance:
+            if self.is_instance:
                 return boto.utils.get_instance_identity()['document']
         except:
             pass
@@ -48,7 +48,7 @@ class Config(Singleton):
     @cached_property
     def _tags(self):
         try:
-            if self._is_instance:
+            if self.is_instance:
                 # Normally, one would use user-data, but cloud-init gets in the way
                 # https://bugs.launchpad.net/cloud-init/+bug/1263893
                 # This uses self.instanceId, which means it relies on the order
