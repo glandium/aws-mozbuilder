@@ -133,10 +133,11 @@ def main():
             updater.maybe_update()
             if worker is None:
                 try:
-                    from worker import Worker, SQSLoggingHandler
+                    from worker import SQSLoggingHandler
+                    from builder import BuilderWorker
                     logger = logging.getLogger('Worker')
                     logger.addHandler(SQSLoggingHandler())
-                    worker = Worker(updater.revision())
+                    worker = BuilderWorker(updater.revision())
                 except:
                     import traceback
                     logging.getLogger('Server').error(traceback.format_exc())

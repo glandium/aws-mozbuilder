@@ -7,13 +7,12 @@ import json
 import logging
 import sys
 import time
+from builder import Job
 from config import Config
 from contextlib import closing
 from urllib2 import urlopen
-from worker import (
-    Job,
-    Worker,
-)
+from util import cached_property
+from worker import Worker
 
 logging.basicConfig()
 
@@ -29,6 +28,10 @@ class ReplayWorker(Worker):
 
         with closing(urlopen(pushlog)) as fh:
             self._pushes = json.loads(fh.read())
+
+    @cached_property
+    def _queue_name(self):
+        return '%s-jobs' % self._config.type
 
     def run(self):
         config = Config()
