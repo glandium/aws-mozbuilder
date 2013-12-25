@@ -7,6 +7,7 @@ import boto.sqs.connection
 import boto.ec2
 import boto.ec2.connection
 import boto.ec2.autoscale
+import boto.s3.connection
 import time
 from config import Config
 from util import Singleton
@@ -45,3 +46,7 @@ class SQSConnection(Singleton, boto.sqs.connection.SQSConnection):
                 boto.sqs.connection.SQSConnection.__init__(self, region=region)
                 return
         raise Exception('Unknown region: %s' % config.region)
+
+
+class S3Connection(Singleton, boto.s3.connection.S3Connection):
+    pass

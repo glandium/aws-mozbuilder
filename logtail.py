@@ -11,6 +11,8 @@ class Formatter(logging.Formatter):
     def format(self, record):
         if hasattr(record, 'instanceId'):
             fmt = '(%(instanceId)s) %(levelname)s:%(name)s:%(message)s'
+            if hasattr(record, 'buildlog') and record.buildlog:
+                fmt += '\n   %(buildlog)s'
         else:
             fmt = '%(levelname)s:%(name)s:%(message)s'
         record.message = record.getMessage()

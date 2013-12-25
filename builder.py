@@ -2,9 +2,24 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import gzip
+import hashlib
+import os
+import subprocess
+import time
 from boto.sqs.jsonmessage import JSONMessage
+from botohelpers import S3Connection
+from contextlib import closing
+from StringIO import StringIO
+from urllib2 import urlopen
 from util  import cached_property
 from worker import Worker
+
+
+BUILD_AREA = '/srv/build'
+# TODO: Use schroot sessions
+WRAPPER_COMMAND = ['schroot', '-c', 'centos', '--']
+HG_BASE = 'http://hg.mozilla.org/'
 
 
 class Job(object):
@@ -45,8 +60,156 @@ class BuilderWorker(Worker):
                 'changeset': job.changeset,
                 'branch': job.branch,
             })
-        self._logger.warning('Finished job for changeset %s on branch %s'
-            % (job.changeset, job.branch), extra={
+        buildlog = BuildLog()
+        status = 'failed'
+        url = ''
+
+        mozconfig_url = \
+            'https://%s.s3.amazonaws.com/mozconfig' % self._config.type
+        mozconfig=''
+        try:
+            with closing(urlopen(mozconfig_url)) as fh:
+                mozconfig = fh.read()
+        except:
+            # TODO: Log some failure cases.
+            pass
+
+        builder = Builder(buildlog, mozconfig)
+        try:
+            builder.build(
+                branch=job.branch,
+                changeset=job.changeset,
+            )
+            status = 'success'
+        except BuildError:
+            pass
+        try:
+            url = self.store_log(buildlog)
+        except:
+            pass
+        self._logger.warning('Finished job for changeset %s on branch %s (%s)'
+            % (job.changeset, job.branch, status), extra={
                 'changeset': job.changeset,
                 'branch': job.branch,
+                'status': status,
+                'buildlog': url,
             })
+
+    @cached_property
+    def _log_storage(self):
+        return S3Connection().get_bucket(self._config.type)
+
+    def store_log(self, log):
+        data = StringIO()
+        hash = hashlib.sha1()
+        with gzip.GzipFile(mode='w', compresslevel=9, fileobj=data) as fh:
+            log.serialize(HashProxy(fh, hash))
+        hash = hash.hexdigest()
+        path = 'logs/%s/%s/%s.txt.gz' % (hash[0], hash[1], hash)
+        key = self._log_storage.new_key(path)
+        key.set_contents_from_string(data.getvalue())
+        key.set_acl('public-read')
+
+        data.close()
+        return path
+
+
+class HashProxy(object):
+    def __init__(self, fh, hash):
+        self._fh = fh
+        self._hash = hash
+
+    def write(self, s):
+        self._fh.write(s)
+        self._hash.update(s)
+
+
+class BuildError(RuntimeError):
+    pass
+
+
+class Builder(object):
+    def __init__(self, buildlog, mozconfig):
+        self._log = buildlog
+        self._mozconfig = mozconfig
+
+    def execute(self, command):
+        start = time.time()
+        proc = subprocess.Popen(WRAPPER_COMMAND + command,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        stdout, stderr = proc.communicate()
+        assert not stderr
+        end = time.time()
+        self._log.add(
+            command=command,
+            output=stdout,
+            duration=end - start,
+            status=proc.returncode,
+        )
+        if proc.returncode:
+            raise BuildError("Command %s failed" % command)
+
+    def prepare_source(self, branch, changeset):
+        source_dir = os.path.join(BUILD_AREA, os.path.basename(branch))
+        clone = not os.path.exists(source_dir)
+        if clone:
+            clone_branch = 'mozilla-central' if branch == 'try' else branch
+            self.execute(['hg', 'clone', HG_BASE + clone_branch, source_dir])
+        hg = ['hg', '-R', source_dir]
+        if not clone:
+            self.execute(hg + ['id', '-i'])
+        if not clone or branch == 'try':
+            self.execute(hg + ['pull', HG_BASE + branch, '-r', changeset])
+        self.execute(hg + ['update', '-C', '-r', changeset])
+        try:
+            self.execute(hg + ['--config', 'extensions.mq=', 'strip',
+                '--no-backup', 'not(:%s)' % changeset])
+        except BuildError:
+            pass
+        self.execute(hg + ['--config', 'extensions.purge=', 'purge', '--all'])
+        return source_dir
+
+    def build(self, branch, changeset):
+        # Add some entropy to the log
+        self.execute(['date'])
+        source_dir = self.prepare_source(branch, changeset)
+        obj_dir = os.path.join(BUILD_AREA, 'obj-' + os.path.basename(branch))
+        mozconfig = os.path.join(source_dir, '.mozconfig')
+        with open(mozconfig, 'w') as fh:
+            fh.write('. $topsrcdir/browser/config/mozconfigs/linux64/nightly\n')
+            if self._mozconfig:
+                fh.write(self._mozconfig)
+            fh.write('mk_add_options MOZ_OBJDIR=%s\n' % obj_dir)
+        self.execute(['cat', mozconfig])
+        self.execute(['rm', '-rf', os.path.join(obj_dir)])
+        self.execute(['make', '-f', 'client.mk', '-C', source_dir])
+
+
+class BuildLog(object):
+    def __init__(self):
+        self._data = []
+
+    def add(self, **kwargs):
+        assert set(kwargs.keys()) == \
+            set(['command', 'output', 'duration', 'status'])
+        self._data.append(kwargs)
+
+    def _serialize_one(self, item):
+        command, output, duration, status = \
+            item['command'], item['output'], item['duration'], item['status']
+
+        return ''.join([
+            '===== Started %s\n' % command,
+            output,
+            '===== %s %s in %d:%02d\n' % (
+                'Failed (status: %d)' % (status) if status else 'Finished',
+                command,
+                duration / 60,
+                duration % 60,
+            ),
+        ])
+
+    def serialize(self, fh):
+        for item in self._data:
+            fh.write(self._serialize_one(item))
+            fh.write('\n')
