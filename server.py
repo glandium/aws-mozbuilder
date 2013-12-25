@@ -112,13 +112,44 @@ class SelfUpdater(object):
             for p in iter_modules_in_path(self._path)
         )
 
+    def revision(self):
+        if not self._can_update:
+            return 'unknown'
+        try:
+            return self._execute_command([
+                'git', 'describe', '--always', '--dirty'
+            ]).strip()
+        except subprocess.CalledProcessError:
+            return 'unknown'
+
 
 def main():
     updater = SelfUpdater()
+    worker = None
 
-    while True:
-        updater.maybe_update()
-        time.sleep(1)
+    # Over-simple main loop.
+    try:
+        while True:
+            updater.maybe_update()
+            if worker is None:
+                try:
+                    from worker import Worker, SQSLoggingHandler
+                    logger = logging.getLogger('Worker')
+                    logger.addHandler(SQSLoggingHandler())
+                    worker = Worker(updater.revision())
+                except:
+                    import traceback
+                    logging.getLogger('Server').error(traceback.format_exc())
+                    worker = False
+
+            if worker:
+                worker.run()
+
+            time.sleep(1)
+    except:
+        if worker:
+            worker.shutdown()
+        raise
 
 
 if __name__ == '__main__':
