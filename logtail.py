@@ -4,6 +4,7 @@
 
 import logging
 import sys
+from config import Config
 from util import cached_property
 from worker import Worker
 
@@ -51,6 +52,7 @@ class LogTailWorker(Worker):
 
 
 def main(args):
+    Config().max_idle = 0
     worker = LogTailWorker()
     while True:
         worker.run()

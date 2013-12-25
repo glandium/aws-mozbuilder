@@ -41,7 +41,7 @@ class ReplayWorker(Worker):
         for id, push in sorted(self._pushes.items(), key=self.push_items_key):
             if refdate:
                 delta = push['date'] - refdate
-                if delta > config.max_idle:
+                if config.max_idle and delta > config.max_idle:
                     delta = config.max_idle
                 if delta:
                     self._logger.warning('Waiting %d seconds until next push.'
