@@ -50,8 +50,22 @@ class BuilderWorker(Worker):
         Worker.shutdown(self)
         if self._config.is_instance:
             from botohelpers import AutoScaleConnection
-            AutoScaleConnection().terminate_instance(self._config.instanceId,
-                decrement_capacity=True)
+            conn = AutoScaleConnection()
+            if conn.get_all_autoscaling_instances([self._config.instanceId]):
+                conn.terminate_instance(self._config.instanceId,
+                    decrement_capacity=True)
+            else:
+                from botohelpers import Ec2Connection
+                conn = Ec2Connection()
+                instances = conn.get_only_instances([self._config.instanceId])
+                attr_name = 'instanceInitiatedShutdownBehavior'
+                # There should really be only one
+                for instance in instances:
+                    attr = instance.get_attribute(attr_name)
+                    if attr[attr_name] == 'terminate':
+                        instance.terminate()
+                    else:
+                        instance.stop()
 
     def _handle_message(self, msg):
         job = Job.from_message(msg)
