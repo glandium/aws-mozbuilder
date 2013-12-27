@@ -55,8 +55,8 @@ class BuilderWorker(Worker):
                 conn.terminate_instance(self._config.instanceId,
                     decrement_capacity=True)
             else:
-                from botohelpers import Ec2Connection
-                conn = Ec2Connection()
+                from botohelpers import EC2Connection
+                conn = EC2Connection()
                 instances = conn.get_only_instances([self._config.instanceId])
                 attr_name = 'instanceInitiatedShutdownBehavior'
                 # There should really be only one
