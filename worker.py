@@ -66,16 +66,19 @@ class Worker(object):
         if not self._running:
             return
 
-        m = self._queue.read(
+        m = self._queue.get_messages(
+            num_messages=1,
             visibility_timeout=7200,
+            attributes='SentTimestamp',
             wait_time_seconds=20,
         )
-        if not m:
+        if len(m) != 1:
             if self._config.max_idle and \
                     time.time() - self._idle_since > self._config.max_idle:
                 self.shutdown()
             return
 
+        m = m[0]
         try:
             self._handle_message(m)
             self._queue.delete_message(m)

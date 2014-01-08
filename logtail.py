@@ -4,6 +4,7 @@
 
 import logging
 import sys
+import time
 from config import Config
 from util import cached_property
 from worker import Worker
@@ -11,12 +12,14 @@ from worker import Worker
 class Formatter(logging.Formatter):
     def format(self, record):
         if hasattr(record, 'instanceId'):
-            fmt = '(%(instanceId)s) %(levelname)s:%(name)s:%(message)s'
+            fmt = '%(asctime)s (%(instanceId)s) %(levelname)s:%(name)s:%(message)s'
             if hasattr(record, 'buildlog') and record.buildlog:
                 fmt += '\n   %(buildlog)s'
         else:
-            fmt = '%(levelname)s:%(name)s:%(message)s'
+            fmt = '%(asctime)s %(levelname)s:%(name)s:%(message)s'
         record.message = record.getMessage()
+        record.asctime = time.strftime('%Y-%m-%d %H:%M:%S',
+                                       self.converter(record.created))
         return fmt % record.__dict__
         
 
@@ -46,6 +49,7 @@ class LogTailWorker(Worker):
             if key not in self.MAPPING:
                 record[key] = body[key]
 
+        record['created'] = float(msg.attributes['SentTimestamp']) / 1000
         record['levelno'] = getattr(logging, record['levelname'])
         rec = logging.makeLogRecord(record)
         self._logger.handle(rec)
