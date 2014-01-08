@@ -20,10 +20,10 @@ class Singleton(object):
 
 class cached_property(object):
     def __init__(self, func):
-        self._value = None
         self._func = func
+        self._name = func.__name__
 
     def __get__(self, obj, cls=None):
-        if self._value is None:
-            self._value = self._func(obj)
-        return self._value
+        if not hasattr(obj, self._name):
+            setattr(obj, self._name, self._func(obj))
+        return getattr(obj, self._name)
