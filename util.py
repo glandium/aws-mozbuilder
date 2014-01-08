@@ -21,7 +21,7 @@ class Singleton(object):
 class cached_property(object):
     def __init__(self, func):
         self._func = func
-        self._name = func.__name__
+        self._name = '_%s' % func.__name__
 
     def __get__(self, obj, cls=None):
         if not hasattr(obj, self._name):

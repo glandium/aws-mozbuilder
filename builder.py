@@ -168,7 +168,8 @@ class Builder(object):
         clone = not os.path.exists(source_dir)
         if clone:
             clone_branch = 'mozilla-central' if branch == 'try' else branch
-            self.execute(['hg', 'clone', HG_BASE + clone_branch, source_dir])
+            self.execute(['hg', 'clone', '--noupdate',
+                          HG_BASE + clone_branch, source_dir])
         hg = ['hg', '-R', source_dir]
         if not clone:
             self.execute(hg + ['id', '-i'])
