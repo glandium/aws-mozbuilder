@@ -210,7 +210,6 @@ class Builder(object):
                 fh.write(self._mozconfig)
             fh.write('mk_add_options MOZ_OBJDIR=%s\n' % obj_dir)
         self.execute(['cat', mozconfig])
-        self.execute(['rm', '-rf', os.path.join(obj_dir)])
         self.execute(['make', '-f', 'client.mk', '-C', source_dir])
 
 
