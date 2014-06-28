@@ -88,7 +88,17 @@ class BuilderWorker(Worker):
             # TODO: Log some failure cases.
             pass
 
-        builder = Builder(buildlog, mozconfig)
+        patch_url = \
+            'https://%s.s3.amazonaws.com/patch' % self._config.type
+        patch=''
+        try:
+            with closing(urlopen(patch_url)) as fh:
+                patch = fh.read()
+        except:
+            # TODO: Log some failure cases.
+            pass
+
+        builder = Builder(buildlog, mozconfig, patch)
         try:
             builder.build(
                 branch=job.branch,
@@ -143,15 +153,17 @@ class BuildError(RuntimeError):
 
 
 class Builder(object):
-    def __init__(self, buildlog, mozconfig):
+    def __init__(self, buildlog, mozconfig, patch):
         self._log = buildlog
         self._mozconfig = mozconfig
+        self._patch = patch
 
-    def execute(self, command):
+    def execute(self, command, input=None):
         start = time.time()
         proc = subprocess.Popen(WRAPPER_COMMAND + command,
+            stdin=subprocess.PIPE if input else None,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        stdout, stderr = proc.communicate()
+        stdout, stderr = proc.communicate(input)
         assert not stderr
         end = time.time()
         self._log.add(
@@ -182,6 +194,8 @@ class Builder(object):
         except BuildError:
             pass
         self.execute(hg + ['--config', 'extensions.purge=', 'purge', '--all'])
+        if self._patch:
+            self.execute(['patch', '-d', source_dir, '-p1'], self._patch)
         return source_dir
 
     def build(self, branch, changeset):
