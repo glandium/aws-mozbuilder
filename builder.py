@@ -193,7 +193,7 @@ class Builder(object):
                 '--no-backup', 'not(:%s)' % changeset])
         except BuildError:
             pass
-        self.execute(hg + ['--config', 'extensions.purge=', 'purge', '--all'])
+        self.execute(hg + ['--config', 'extensions.purge=', 'purge'])
         if self._patch:
             self.execute(['patch', '-d', source_dir, '-p1'], self._patch)
         return source_dir
