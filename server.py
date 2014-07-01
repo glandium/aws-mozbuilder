@@ -168,7 +168,7 @@ def main():
                 virtualenv])
         # Ensure all dependencies are there.
         h.execute_command([os.path.join(virtualenv, 'bin', 'pip'), 'install',
-            'MozillaPulse'])
+            'MozillaPulse', 'boto'])
         # Reexecute in virtualenv
         h._logger.warning('Start in venv.')
         venv_python = os.path.join(virtualenv, 'bin', 'python')
