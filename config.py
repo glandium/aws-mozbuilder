@@ -12,7 +12,8 @@ from util import (
 
 
 class Config(Singleton):
-    _slots = set(['instanceId', 'max_idle', 'region', 'type'])
+    _slots = set(['instanceId', 'max_idle', 'region', 'type', 'branch',
+        'after', 'to', 'mozconfig', 'patch'])
 
     def __getattr__(self, name):
         if name not in Config._slots:

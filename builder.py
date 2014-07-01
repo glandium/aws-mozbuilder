@@ -10,6 +10,7 @@ import time
 from boto.sqs.jsonmessage import JSONMessage
 from botohelpers import S3Connection
 from contextlib import closing
+from pushlog import Pushlog
 from StringIO import StringIO
 from urllib2 import urlopen
 from util  import cached_property
@@ -22,27 +23,19 @@ WRAPPER_COMMAND = ['schroot', '-c', 'centos', '--']
 HG_BASE = 'http://hg.mozilla.org/'
 
 
-class Job(object):
-    def __init__(self, branch, changeset):
-        self.branch = branch
-        self.changeset = changeset
-
-    @staticmethod
-    def from_message(msg):
-        assert isinstance(msg, JSONMessage)
-        return Job(msg['branch'], msg['changeset'])
-
-    def to_message(self):
-        msg = JSONMessage()
-        msg['branch'] = self.branch
-        msg['changeset'] = self.changeset
-        return msg
-
-
 class BuilderWorker(Worker):
     @cached_property
+    def _branch(self):
+        return self._config.branch
+
+    @cached_property
+    def _queue(self):
+        return iter(Pushlog(self._config.branch, self._config.after,
+            self._config.to))
+
+    @cached_property
     def _queue_name(self):
-        return '%s-jobs' % self._config.type
+        return self._config.branch
 
     def shutdown(self):
         if not self._running:
@@ -67,42 +60,61 @@ class BuilderWorker(Worker):
                     else:
                         instance.stop()
 
-    def _handle_message(self, msg):
-        job = Job.from_message(msg)
-        self._logger.warning('Starting job for changeset %s on branch %s'
-            % (job.changeset, job.branch), extra={
-                'changeset': job.changeset,
-                'branch': job.branch,
+    def run(self):
+        if not self._running:
+            return
+
+        try:
+            push = self._queue.next()
+        except StopIteration:
+            self.shutdown()
+            return
+
+        changeset = push['changesets'][-1]
+
+        now = time.time()
+        self._logger.warning(
+            'Starting job for changeset %s on branch %s (wait: %d + %d)'
+            % (changeset, self._branch, int(push['received'] - push['date']),
+               int(now - push['received'])), extra={
+                'changeset': changeset,
+                'branch': self._branch,
             })
         buildlog = BuildLog()
         status = 'failed'
         url = ''
 
-        mozconfig_url = \
-            'https://%s.s3.amazonaws.com/mozconfig' % self._config.type
-        mozconfig=''
-        try:
-            with closing(urlopen(mozconfig_url)) as fh:
-                mozconfig = fh.read()
-        except:
-            # TODO: Log some failure cases.
-            pass
+        mozconfig = self._config.mozconfig
+        if self._config.mozconfig:
+            if self._config.mozconfig.startswith('http:') or \
+                    self._config.mozconfig.startswith('https:'):
+                mozconfig = ''
+                try:
+                    with closing(urlopen(self._config.mozconfig)) as fh:
+                        mozconfig = fh.read()
+                except:
+                    # TODO: Log some failure cases.
+                    pass
+            else:
+                mozconfig = '. $topsrcdir/%s\n' % self._config.mozconfig
+        else:
+            mozconfig = '. $topsrcdir/browser/config/mozconfigs/linux64/nightly\n'
 
-        patch_url = \
-            'https://%s.s3.amazonaws.com/patch' % self._config.type
+        patch_url = self._config.patch
         patch=''
-        try:
-            with closing(urlopen(patch_url)) as fh:
-                patch = fh.read()
-        except:
-            # TODO: Log some failure cases.
-            pass
+        if patch_url:
+            try:
+                with closing(urlopen(patch_url)) as fh:
+                    patch = fh.read()
+            except:
+                # TODO: Log some failure cases.
+                pass
 
         builder = Builder(buildlog, mozconfig, patch)
         try:
             builder.build(
-                branch=job.branch,
-                changeset=job.changeset,
+                branch=self._branch,
+                changeset=changeset,
             )
             status = 'success'
         except BuildError:
@@ -112,9 +124,9 @@ class BuilderWorker(Worker):
         except:
             pass
         self._logger.warning('Finished job for changeset %s on branch %s (%s)'
-            % (job.changeset, job.branch, status), extra={
-                'changeset': job.changeset,
-                'branch': job.branch,
+            % (changeset, self._branch, status), extra={
+                'changeset': changeset,
+                'branch': self._branch,
                 'status': status,
                 'buildlog': url,
             })
