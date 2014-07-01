@@ -210,7 +210,32 @@ class Builder(object):
                 fh.write(self._mozconfig)
             fh.write('mk_add_options MOZ_OBJDIR=%s\n' % obj_dir)
         self.execute(['cat', mozconfig])
-        self.execute(['make', '-f', 'client.mk', '-C', source_dir])
+        clobber = self.will_clobber(obj_dir, source_dir)
+        try:
+            self.execute(['make', '-f', 'client.mk', '-C', source_dir])
+        except BuildError:
+            if clobber:
+                raise
+            # If the build wasn't a clobber, try again with a clobber.
+            self.execute(hg + ['--config', 'extensions.purge=', 'purge', '--all'])
+            self.execute(['make', '-f', 'client.mk', '-C', source_dir, 'clobber'])
+            self.execute(['make', '-f', 'client.mk', '-C', source_dir])
+
+    def will_clobber(self, obj_dir, src_dir):
+        """Returns a bool indicating whether a tree clobber is going to be performed."""
+
+        obj_clobber = os.path.join(obj_dir, 'CLOBBER')
+        # No object directory clobber file means we're good.
+        if not os.path.exists(obj_clobber):
+            return False
+
+        src_clobber = os.path.join(src_dir, 'CLOBBER')
+        # Object directory clobber older than current is fine.
+        if os.path.getmtime(src_clobber) <= \
+            os.path.getmtime(obj_clobber):
+            return False
+
+        return True
 
 
 class BuildLog(object):
