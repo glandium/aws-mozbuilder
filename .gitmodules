@@ -1,3 +1,6 @@
 [submodule "boto"]
 	path = boto
 	url = https://github.com/boto/boto
+[submodule "virtualenv"]
+	path = virtualenv
+	url = https://github.com/pypa/virtualenv

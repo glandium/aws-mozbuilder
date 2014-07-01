@@ -34,14 +34,30 @@ class HandledException(Exception):
         self._wrapped_exception = exception
 
 
-class SelfUpdater(object):
+class Harness(object):
+    def __init__(self):
+        self._path = os.path.dirname(__file__) or '.'
+        self._logger = logging.getLogger('Harness')
+
+    def execute_command(self, cmd):
+        try:
+            out = subprocess.check_output(cmd, stderr=subprocess.STDOUT,
+                cwd=self._path)
+            return out
+        except subprocess.CalledProcessError as e:
+            self._logger.error('Command "%s" failed with error code %d. '
+                'Its output was:\n%s'
+                % (' '.join(cmd), e.returncode, e.output))
+            raise HandledException(e)
+
+
+class SelfUpdater(Harness):
     # Only check for updates if last update was more than an hour ago.
     UPDATE_CHECK_PERIOD = 3600
 
     def __init__(self):
-        self._path = os.path.dirname(__file__) or '.'
+        Harness.__init__(self)
         self._can_update = os.path.isdir(os.path.join(self._path, '.git'))
-        self._logger = logging.getLogger('SelfUpdater')
         self._last_update = 0
         if not self._can_update:
             self._logger.warning('Not under git control. Cannot self-update.')
@@ -62,30 +78,30 @@ class SelfUpdater(object):
         if now - self._last_update < self.UPDATE_CHECK_PERIOD:
             return
         self._last_update = now
-        out = self._execute_command(['git', 'status', '--porcelain'])
+        out = self.execute_command(['git', 'status', '--porcelain'])
         if any(not l.startswith('??') for l in out.splitlines()):
             self._logger.error('There are local changes to the server. '
                 'Cannot self-update.')
             return
         mtimes = self.get_modules_mtimes()
-        out = self._execute_command(['git', 'fetch', '--no-tags'])
+        out = self.execute_command(['git', 'fetch', '--no-tags'])
         # git fetch outputs nothing when it fetches nothing
         if not out:
             # When updating from a version before submodule support, the first
             # git fetch after update will return nothing, but submodule
             # initialization is still needed.
-            status = self._execute_command(['git', 'submodule', 'status'])
+            status = self.execute_command(['git', 'submodule', 'status'])
             if all(not line.startswith('-') for line in status.splitlines()):
                 return
         for line in out.splitlines():
             self._logger.warning(line)
-        out = self._execute_command(['git', 'pull', '--ff-only'])
+        out = self.execute_command(['git', 'pull', '--ff-only'])
         for line in out.splitlines():
             self._logger.warning(line)
-        out = self._execute_command(['git', 'submodule', 'init'])
+        out = self.execute_command(['git', 'submodule', 'init'])
         for line in out.splitlines():
             self._logger.warning(line)
-        out = self._execute_command(['git', 'submodule', 'update'])
+        out = self.execute_command(['git', 'submodule', 'update'])
         for line in out.splitlines():
             self._logger.warning(line)
         new_mtimes = self.get_modules_mtimes()
@@ -94,17 +110,6 @@ class SelfUpdater(object):
             return
         self._logger.warning('Server code changed. Restarting.')
         os.execl(sys.executable, sys.executable, __file__)
-
-    def _execute_command(self, cmd):
-        try:
-            out = subprocess.check_output(cmd, stderr=subprocess.STDOUT,
-                cwd=self._path)
-            return out
-        except subprocess.CalledProcessError as e:
-            self._logger.error('Command "%s" failed with error code %d. '
-                'Its output was:\n%s'
-                % (' '.join(cmd), e.returncode, e.output))
-            raise HandledException(e)
 
     def get_modules_mtimes(self):
         return dict(
@@ -116,14 +121,14 @@ class SelfUpdater(object):
         if not self._can_update:
             return 'unknown'
         try:
-            return self._execute_command([
+            return self.execute_command([
                 'git', 'describe', '--always', '--dirty'
             ]).strip()
         except subprocess.CalledProcessError:
             return 'unknown'
 
 
-def main():
+def virtualenv_main():
     updater = SelfUpdater()
     worker = None
 
@@ -151,6 +156,25 @@ def main():
         if worker:
             worker.shutdown()
         raise
+
+
+def main():
+    virtualenv = os.path.join(os.path.dirname(__file__), 'venv')
+    if not hasattr(sys, 'real_prefix'):
+        h = Harness()
+        # Create virtualenv if it doesn't exist.
+        if not os.path.exists(virtualenv):
+            h.execute_command([sys.executable, 'virtualenv/virtualenv.py',
+                virtualenv])
+        # Ensure all dependencies are there.
+        h.execute_command([os.path.join(virtualenv, 'bin', 'pip'), 'install',
+            'MozillaPulse'])
+        # Reexecute in virtualenv
+        h._logger.warning('Start in venv.')
+        venv_python = os.path.join(virtualenv, 'bin', 'python')
+        os.execl(venv_python, venv_python, __file__)
+
+    virtualenv_main()
 
 
 if __name__ == '__main__':
