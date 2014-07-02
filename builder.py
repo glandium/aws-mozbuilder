@@ -232,7 +232,6 @@ class Builder(object):
         obj_dir = os.path.join(BUILD_AREA, 'obj-' + os.path.basename(branch))
         mozconfig = os.path.join(source_dir, '.mozconfig')
         with open(mozconfig, 'w') as fh:
-            fh.write('. $topsrcdir/browser/config/mozconfigs/linux64/nightly\n')
             if self._mozconfig:
                 fh.write(self._mozconfig)
             fh.write('mk_add_options MOZ_OBJDIR=%s\n' % obj_dir)
