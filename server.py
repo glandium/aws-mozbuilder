@@ -165,9 +165,13 @@ def main():
         h = Harness()
         # Create virtualenv if it doesn't exist.
         if not os.path.exists(virtualenv):
-            h.execute_command([sys.executable,
-                os.path.join(base, 'virtualenv/virtualenv.py'),
-                virtualenv])
+            virtualenv_cmd = os.path.join(base, 'virtualenv/virtualenv.py')
+            # If the virtualenv script doesn't exist, the update may not
+            # be complete. Try running it again.
+            if not os.path.exists(virtualenv):
+                updater = SelfUpdater()
+                updater.maybe_update()
+            h.execute_command([sys.executable, virtualenv_cmd, virtualenv])
         # Ensure all dependencies are there.
         h.execute_command([os.path.join(virtualenv, 'bin', 'pip'), 'install',
             'MozillaPulse', 'boto'])
