@@ -159,12 +159,14 @@ def virtualenv_main():
 
 
 def main():
-    virtualenv = os.path.join(os.path.dirname(__file__), 'venv')
+    base = os.path.dirname(__file__)
+    virtualenv = os.path.join(base, 'venv')
     if not hasattr(sys, 'real_prefix'):
         h = Harness()
         # Create virtualenv if it doesn't exist.
         if not os.path.exists(virtualenv):
-            h.execute_command([sys.executable, 'virtualenv/virtualenv.py',
+            h.execute_command([sys.executable,
+                os.path.join(base, 'virtualenv/virtualenv.py'),
                 virtualenv])
         # Ensure all dependencies are there.
         h.execute_command([os.path.join(virtualenv, 'bin', 'pip'), 'install',
