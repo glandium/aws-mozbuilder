@@ -25,18 +25,6 @@ class EC2Connection(Singleton, boto.ec2.connection.EC2Connection):
         boto.ec2.connection.EC2Connection.__init__(self, region=region)
 
 
-class AutoScaleConnection(Singleton, boto.ec2.autoscale.AutoScaleConnection):
-    def __init__(self):
-        config = Config()
-        # boto.ec2.autoscale doesn't have get_region() like boto.ec2.
-        for region in boto.ec2.autoscale.regions():
-            if region.name == config.region:
-                boto.ec2.autoscale.AutoScaleConnection.__init__(self,
-                    region=region)
-                return
-        raise Exception('Unknown region: %s' % config.region)
-
-
 class SQSConnection(Singleton, boto.sqs.connection.SQSConnection):
     def __init__(self):
         config = Config()
