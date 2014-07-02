@@ -21,7 +21,7 @@ class Config(Singleton):
             raise AttributeError("'%s' object has no attribute '%s'"
                 % (self.__class__.__name__, name))
 
-        for category in ('identity', 'tags', 'config_file', 'defaults'):
+        for category in ('identity', 'config_file', 'defaults'):
             dct = getattr(self, '_%s' % category)
             if name in dct:
                 value = dct[name]
@@ -46,23 +46,6 @@ class Config(Singleton):
         except:
             pass
         return {'instanceId': 'unknown-%s' % socket.gethostname()}
-
-    @cached_property
-    def _tags(self):
-        try:
-            if self.is_instance:
-                # Normally, one would use user-data, but cloud-init gets in the way
-                # https://bugs.launchpad.net/cloud-init/+bug/1263893
-                # This uses self.instanceId, which means it relies on the order
-                # in which categories are checked in __getattr__().
-                from botohelpers import EC2Connection
-                instances = EC2Connection().get_only_instances(
-                    instance_ids=[self.instanceId],
-                )
-                return instances[0].tags
-        except:
-            pass
-        return {}
 
     @cached_property
     def _config_file(self):
