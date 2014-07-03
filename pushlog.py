@@ -75,7 +75,7 @@ class PulseListener(object):
             except:
                 pass
 
-            self.queue.put((rev, branch, revlink, data))
+            self.queue.put((rev, branch, revlink, data, time.time()))
 
         while not self.shutting_down:
             # Connect to pulse
@@ -121,6 +121,7 @@ class Pushlog(object):
 
     def __iter__(self):
         pulse = None
+        received = time.time()
         try:
             while True:
                 if self._after:
@@ -140,7 +141,7 @@ class Pushlog(object):
                     for id, push in sorted(pushes.items(),
                             key=self.push_items_key):
                         if self._after:
-                            push['received'] = time.time()
+                            push['received'] = received
                             yield push
                     self._after = push['changesets'][-1]
 
@@ -151,7 +152,8 @@ class Pushlog(object):
                     pulse = PulseListener()
                 while True:
                     try:
-                        rev, branch, revlink, data = pulse.queue.get(timeout=1)
+                        rev, branch, revlink, data, received = \
+                            pulse.queue.get(timeout=1)
                     except Empty:
                         if not pulse.listener_thread.is_alive():
                             pulse.shutdown()
