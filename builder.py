@@ -54,14 +54,6 @@ class BuilderWorker(Worker):
 
         changeset = push['changesets'][-1]
 
-        now = time.time()
-        self._logger.warning(
-            'Starting job for changeset %s on branch %s (wait: %d + %d)'
-            % (changeset, self._branch, int(push['received'] - push['date']),
-               int(now - push['received'])), extra={
-                'changeset': changeset,
-                'branch': self._branch,
-            })
         buildlog = BuildLog()
         status = 'failed'
         url = ''
@@ -94,25 +86,44 @@ class BuilderWorker(Worker):
 
         builder = Builder(buildlog, mozconfig, patch,
             self._config.tooltool_manifest, self._config.tooltool_base)
-        try:
-            builder.build(
-                branch=self._branch,
-                changeset=changeset,
-            )
-            status = 'success'
-        except BuildError:
-            pass
-        try:
-            url = self.store_log(buildlog)
-        except:
-            pass
-        self._logger.warning('Finished job for changeset %s on branch %s (%s)'
-            % (changeset, self._branch, status), extra={
-                'changeset': changeset,
-                'branch': self._branch,
-                'status': status,
-                'buildlog': url,
-            })
+        for clobber in (False, True):
+            now = time.time()
+            self._logger.warning(
+                'Starting job for changeset %s on branch %s (wait: %d + %d)'
+                % (changeset, self._branch, int(push['received'] - push['date']),
+                   int(now - push['received'])), extra={
+                    'event': 'start',
+                    'changeset': changeset,
+                    'branch': self._branch,
+                    'clobber': clobber,
+                    'pushed': push['date'],
+                    'received': push['received'],
+                })
+            try:
+                builder.build(
+                    branch=self._branch,
+                    changeset=changeset,
+                    clobber=clobber,
+                )
+                status = 'success'
+            except BuildError:
+                pass
+            try:
+                url = self.store_log(buildlog)
+            except:
+                pass
+            self._logger.warning('Finished job for changeset %s on branch %s (%s)'
+                % (changeset, self._branch, status), extra={
+                    'event': 'end',
+                    'changeset': changeset,
+                    'branch': self._branch,
+                    'status': status,
+                    'buildlog': url,
+                    'clobber': clobber,
+                    'clobbered': builder.clobbered,
+                })
+            if status == 'success':
+                break
 
     @cached_property
     def _log_storage(self):
@@ -157,6 +168,7 @@ class Builder(object):
         self._patch = patch
         self._tooltool = (tooltool_manifest, tooltool_base) \
             if tooltool_manifest and tooltool_base else None
+        self.clobbered = False
 
     def execute(self, command, input=None, cwd=None, wrapper=WRAPPER_COMMAND):
         start = time.time()
@@ -175,7 +187,7 @@ class Builder(object):
         if proc.returncode:
             raise BuildError("Command %s failed" % command)
 
-    def prepare_source(self, branch, changeset):
+    def prepare_source(self, branch, changeset, clobber=False):
         source_dir = os.path.join(BUILD_AREA, os.path.basename(branch))
         clone = not os.path.exists(source_dir)
         if clone:
@@ -193,7 +205,10 @@ class Builder(object):
                 '--no-backup', 'not(:%s)' % changeset])
         except BuildError:
             pass
-        self.execute(hg + ['--config', 'extensions.purge=', 'purge'])
+        purge_cmd = hg + ['--config', 'extensions.purge=', 'purge']
+        if clobber:
+            purge_cmd.append('--all')
+        self.execute(purge_cmd)
         if self._patch:
             self.execute(['patch', '-d', source_dir, '-p1'], self._patch,
                 wrapper=[])
@@ -211,12 +226,12 @@ class Builder(object):
                     wrapper=[])
         return source_dir
 
-    def build(self, branch, changeset):
+    def build(self, branch, changeset, clobber=False):
         # Add some entropy to the log
         self.execute(['date'])
         self.execute(
             ['env', 'CCACHE_DIR=/srv/cache', 'ccache', '-z', '-M', '10G'])
-        source_dir = self.prepare_source(branch, changeset)
+        source_dir = self.prepare_source(branch, changeset, clobber=clobber)
         obj_dir = os.path.join(BUILD_AREA, 'obj-' + os.path.basename(branch))
         mozconfig = os.path.join(source_dir, '.mozconfig')
         with open(mozconfig, 'w') as fh:
@@ -224,19 +239,14 @@ class Builder(object):
                 fh.write(self._mozconfig)
             fh.write('mk_add_options MOZ_OBJDIR=%s\n' % obj_dir)
         self.execute(['cat', mozconfig])
-        clobber = self.will_clobber(obj_dir, source_dir)
+        if clobber:
+            self.execute(['make', '-f', 'client.mk', '-C', source_dir, 'clobber'])
+        self.clobbered = self.will_clobber(obj_dir, source_dir)
         try:
             self.execute(['env', 'CCACHE_DIR=/srv/cache', 'make', '-f',
                 'client.mk', '-C', source_dir])
-        except BuildError:
-            if clobber:
-                raise
-            # If the build wasn't a clobber, try again with a clobber.
-            self.execute(hg + ['--config', 'extensions.purge=', 'purge', '--all'])
-            self.execute(['make', '-f', 'client.mk', '-C', source_dir, 'clobber'])
-            self.execute(['env', 'CCACHE_DIR=/srv/cache', 'make', '-f',
-                'client.mk', '-C', source_dir])
-        self.execute(['env', 'CCACHE_DIR=/srv/cache', 'ccache', '-s'])
+        finally:
+            self.execute(['env', 'CCACHE_DIR=/srv/cache', 'ccache', '-s'])
 
     def will_clobber(self, obj_dir, src_dir):
         """Returns a bool indicating whether a tree clobber is going to be performed."""
