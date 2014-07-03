@@ -116,7 +116,7 @@ class BuilderWorker(Worker):
 
     @cached_property
     def _log_storage(self):
-        return S3Connection().get_bucket(self._config.type)
+        return S3Connection().get_bucket(self._config.type, validate=False)
 
     def store_log(self, log):
         data = StringIO()
@@ -126,8 +126,10 @@ class BuilderWorker(Worker):
         hash = hash.hexdigest()
         path = 'logs/%s/%s/%s.txt.gz' % (hash[0], hash[1], hash)
         key = self._log_storage.new_key(path)
-        key.set_contents_from_string(data.getvalue())
-        key.set_acl('public-read')
+        key.set_contents_from_string(data.getvalue(), headers={
+            'x-amz-acl': 'public-read',
+            'Cache-Control': 'max-age=1296000', # Two weeks
+        })
 
         data.close()
         return path
