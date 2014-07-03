@@ -214,6 +214,8 @@ class Builder(object):
     def build(self, branch, changeset):
         # Add some entropy to the log
         self.execute(['date'])
+        self.execute(
+            ['env', 'CCACHE_DIR=/srv/cache', 'ccache', '-z', '-M', '10G'])
         source_dir = self.prepare_source(branch, changeset)
         obj_dir = os.path.join(BUILD_AREA, 'obj-' + os.path.basename(branch))
         mozconfig = os.path.join(source_dir, '.mozconfig')
@@ -224,14 +226,17 @@ class Builder(object):
         self.execute(['cat', mozconfig])
         clobber = self.will_clobber(obj_dir, source_dir)
         try:
-            self.execute(['make', '-f', 'client.mk', '-C', source_dir])
+            self.execute(['env', 'CCACHE_DIR=/srv/cache', 'make', '-f',
+                'client.mk', '-C', source_dir])
         except BuildError:
             if clobber:
                 raise
             # If the build wasn't a clobber, try again with a clobber.
             self.execute(hg + ['--config', 'extensions.purge=', 'purge', '--all'])
             self.execute(['make', '-f', 'client.mk', '-C', source_dir, 'clobber'])
-            self.execute(['make', '-f', 'client.mk', '-C', source_dir])
+            self.execute(['env', 'CCACHE_DIR=/srv/cache', 'make', '-f',
+                'client.mk', '-C', source_dir])
+        self.execute(['env', 'CCACHE_DIR=/srv/cache', 'ccache', '-s'])
 
     def will_clobber(self, obj_dir, src_dir):
         """Returns a bool indicating whether a tree clobber is going to be performed."""
