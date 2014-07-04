@@ -87,11 +87,11 @@ class BuilderWorker(Worker):
             self._config.tooltool_manifest, self._config.tooltool_base)
         for clobber in (False, True):
             buildlog.clear()
-            now = time.time()
+            started = time.time()
             self._logger.warning(
                 'Starting job for changeset %s on branch %s (wait: %d + %d)'
                 % (changeset, self._branch, int(push['received'] - push['date']),
-                   int(now - push['received'])), extra={
+                   int(started - push['received'])), extra={
                     'event': 'start',
                     'changeset': changeset,
                     'branch': self._branch,
@@ -108,6 +108,7 @@ class BuilderWorker(Worker):
                 status = 'success'
             except BuildError:
                 pass
+            finished = time.time()
             try:
                 url = self.store_log(buildlog)
             except:
@@ -121,6 +122,10 @@ class BuilderWorker(Worker):
                     'buildlog': url,
                     'clobber': clobber,
                     'clobbered': builder.clobbered,
+                    'pushed': push['date'],
+                    'received': push['received'],
+                    'started': started,
+                    'finished': finished,
                 })
             if status == 'success':
                 break
