@@ -200,11 +200,6 @@ class Builder(object):
         if not clone or branch == 'try':
             self.execute(hg + ['pull', HG_BASE + branch, '-r', changeset])
         self.execute(hg + ['update', '-C', '-r', changeset])
-        try:
-            self.execute(hg + ['--config', 'extensions.mq=', 'strip',
-                '--no-backup', 'not(:%s)' % changeset])
-        except BuildError:
-            pass
         purge_cmd = hg + ['--config', 'extensions.purge=', 'purge']
         if clobber:
             purge_cmd.append('--all')
