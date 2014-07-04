@@ -140,10 +140,12 @@ class BuilderWorker(Worker):
         with gzip.GzipFile(mode='w', compresslevel=9, fileobj=data) as fh:
             log.serialize(HashProxy(fh, hash))
         hash = hash.hexdigest()
-        path = 'logs/%s/%s/%s.txt.gz' % (hash[0], hash[1], hash)
+        path = 'logs/%s/%s/%s.gz' % (hash[0], hash[1], hash)
         key = self._log_storage.new_key(path)
         key.set_contents_from_string(data.getvalue(), headers={
             'x-amz-acl': 'public-read',
+            'Content-Type': 'text/plain',
+            'Content-Encoding': 'gzip',
             'Cache-Control': 'max-age=1296000', # Two weeks
         })
 
@@ -240,8 +242,8 @@ class Builder(object):
             fh.write('mk_add_options MOZ_OBJDIR=%s\n' % obj_dir)
         self.execute(['cat', mozconfig])
         if clobber:
-            self.execute(['make', '-f', 'client.mk', '-C', source_dir, 'clobber'])
-        self.clobbered = self.will_clobber(obj_dir, source_dir)
+            self.execute(['rm', '-rf', obj_dir])
+        self.clobbered = clobber or self.will_clobber(obj_dir, source_dir)
         try:
             self.execute(['env', 'CCACHE_DIR=/srv/cache', 'make', '-f',
                 'client.mk', '-C', source_dir])
