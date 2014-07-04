@@ -30,8 +30,7 @@ class BuilderWorker(Worker):
 
     @cached_property
     def _queue(self):
-        return iter(Pushlog(self._config.branch, self._config.after,
-            self._config.to))
+        return iter(Pushlog({ self._config.branch: self._config.after }))
 
     @cached_property
     def _queue_name(self):

@@ -8,6 +8,7 @@ import re
 import time
 import socket
 import threading
+from collections import OrderedDict
 from contextlib import closing
 from kombu import Exchange
 from mozillapulse import consumers
@@ -18,8 +19,9 @@ from Queue import Queue, Empty
 class PulseListener(object):
     instance = None
 
-    def __init__(self):
+    def __init__(self, filter_callback):
         self.shutting_down = False
+        self._filter = filter_callback
 
         # Let's generate a unique label for the script
         try:
@@ -75,7 +77,15 @@ class PulseListener(object):
             except:
                 pass
 
-            self.queue.put((rev, branch, revlink, data, time.time()))
+            data = {
+                'rev': rev,
+                'branch': branch,
+                'revlink': revlink,
+                'data': data,
+                'received': time.time(),
+            }
+            if self._filter(data):
+                self.queue.put(data)
 
         while not self.shutting_down:
             # Connect to pulse
@@ -106,69 +116,122 @@ class PulseListener(object):
 
             pulse.disconnect()
 
-
     def shutdown(self):
         if not self.shutting_down:
             self.shutting_down = True
             self.listener_thread.join()
 
-
-class Pushlog(object):
-    def __init__(self, branch, after=None, to=None):
-        self._branch = branch
-        self._after = after
-        self._to = to
+    def _iter(self, timeout, pending_only=False):
+        while True:
+            try:
+                yield self.queue.get(timeout=timeout)
+            except Empty as e:
+                if not self.listener_thread.is_alive():
+                    self.shutdown()
+                if pending_only or self.shutting_down:
+                    break
+            except KeyboardInterrupt:
+                self.shutdown()
+                raise
 
     def __iter__(self):
-        pulse = None
-        received = time.time()
+        for d in self._iter(timeout=1):
+            yield d
+
+    def iter_pending(self):
+        for d in self._iter(timeout=0, pending_only=True):
+            yield d
+
+
+class Pushlog(object):
+    def __init__(self, branches, pulse=True):
+        assert isinstance(branches, (list, dict))
+        # Normalize branches.
+        if isinstance(branches, list):
+            self.branches = { b: None for b in branches }
+        elif isinstance(branches, dict):
+            self.branches = {}
+            for b, v in branches.items():
+                assert isinstance(v, (str, unicode)) or v is None
+                self.branches[b] = v
+        self._pulse = pulse
+
+    def __iter__(self):
+        if self._pulse:
+            pulse = PulseListener(lambda data: data['branch'] in self.branches)
+        else:
+            class DummyPulse(object):
+                def __iter__(self):
+                    return iter([])
+
+                def iter_pending(self):
+                    return iter([])
+
+            pulse = DummyPulse()
+
         try:
-            while True:
-                if self._after:
-                    pushlog = \
-                        'https://hg.mozilla.org/%s/json-pushes?fromchange=%s' \
-                        % (self._branch, self._after)
-                    if self._to:
-                        pushlog += '&tochange=%s' % self._to
-                else:
-                    pushlog = \
-                        'https://hg.mozilla.org/%s/json-pushes' % self._branch
-
-                with closing(urlopen(pushlog)) as fh:
-                    pushes = json.loads(fh.read())
-
-                if pushes:
-                    for id, push in sorted(pushes.items(),
-                            key=self.push_items_key):
-                        if self._after:
-                            push['received'] = received
-                            yield push
-                    self._after = push['changesets'][-1]
-
-                    if self._to and self._after.startswith(self._to):
-                        break
-
-                if not pulse:
-                    pulse = PulseListener()
-                while True:
-                    try:
-                        rev, branch, revlink, data, received = \
-                            pulse.queue.get(timeout=1)
-                    except Empty:
-                        if not pulse.listener_thread.is_alive():
-                            pulse.shutdown()
-                            break
-                        continue
-                    if branch == self._branch:
-                        break
-
-                if pulse and pulse.shutting_down:
-                    break
+            for push in self._iter(pulse):
+                yield push
         finally:
-            if pulse:
-                pulse.shutdown()
+            pulse.shutdown()
+
+
+    def _iter(self, pulse):
+        pushes = {}
+        for branch, after in self.branches.items():
+            received = time.time()
+            pushes[branch] = self.get_pushes(branch, fromchange=after)
+            for push in pushes[branch].values():
+                push['received'] = received
+
+        for data in pulse.iter_pending():
+            rev = data['rev']
+            branch = data['branch']
+            for rev, push in self.get_pushes(branch, changeset=rev).items():
+                # In the unlikely event the changeset was received by pulse
+                # while reading json from other branches, adjust its received
+                # time.
+                if rev in pushes[branch]:
+                    push['received'] = data['received']
+                else:
+                    pushes[branch][rev] = push
+
+        for push in sorted((p for b in pushes for p in pushes[b].values()),
+                key=lambda p: p['date']):
+            yield push
+            self.branches[push['branch']] = push['changesets'][-1]
+
+        for data in pulse:
+            rev = data['rev']
+            branch = data['branch']
+            for push in self.get_pushes(branch, changeset=rev).values():
+                push['received'] = data['received']
+                yield push
+                self.branches[branch] = rev
 
     @staticmethod
-    def push_items_key(item):
-        id, push = item
-        return (push['date'], id)
+    def get_pushes(branch, **args):
+        def push_items_key(item):
+            id, push = item
+            return (push['date'], id)
+
+        url = 'https://hg.mozilla.org/%s/json-pushes?%s' % (
+            branch,
+            '&'.join('%s=%s' % (k, v) for k, v in args.items()),
+        )
+        for retry in range(0, 5):
+            try:
+                with closing(urlopen(url)) as fh:
+                    result = OrderedDict()
+                    pushes = sorted(json.loads(fh.read()).items(),
+                        key=push_items_key)
+                    for id, push in pushes:
+                        push['branch'] = branch
+                        result[push['changesets'][-1]] = push
+                    return result
+            except:
+                time.sleep(1)
+                continue
+            break
+
+        return {}
