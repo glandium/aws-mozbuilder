@@ -87,6 +87,7 @@ class BuilderWorker(Worker):
         builder = Builder(buildlog, mozconfig, patch,
             self._config.tooltool_manifest, self._config.tooltool_base)
         for clobber in (False, True):
+            buildlog.clear()
             now = time.time()
             self._logger.warning(
                 'Starting job for changeset %s on branch %s (wait: %d + %d)'
@@ -262,12 +263,15 @@ class Builder(object):
 
 class BuildLog(object):
     def __init__(self):
-        self._data = []
+        self.clear()
 
     def add(self, **kwargs):
         assert set(kwargs.keys()) == \
             set(['command', 'output', 'duration', 'status'])
         self._data.append(kwargs)
+
+    def clear(self):
+        self._data = []
 
     def _serialize_one(self, item):
         command, output, duration, status = \
