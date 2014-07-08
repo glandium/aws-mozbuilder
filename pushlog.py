@@ -101,8 +101,11 @@ class PulseListener(object):
             exchange = Exchange(pulse.exchange, type='topic')
             queue = pulse._create_queue(pulse.applabel, exchange,
                 pulse.topic[0])
-            consumer = pulse.connection.Consumer(queue,
-                callbacks=[pulse.callback])
+            try:
+                consumer = pulse.connection.Consumer(queue,
+                    callbacks=[pulse.callback])
+            except socket.error:
+                continue
             with consumer:
                 while not self.shutting_down:
                     try:
