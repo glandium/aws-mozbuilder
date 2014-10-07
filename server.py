@@ -172,9 +172,9 @@ def main():
                 updater = SelfUpdater()
                 updater.maybe_update()
             h.execute_command([sys.executable, virtualenv_cmd, virtualenv])
-        # Ensure all dependencies are there.
+        # Ensure all dependencies are there and up-to-date.
         h.execute_command([os.path.join(virtualenv, 'bin', 'pip'), 'install',
-            'MozillaPulse', 'boto'])
+            '--upgrade', 'MozillaPulse', 'boto'])
         # Reexecute in virtualenv
         h._logger.warning('Start in venv.')
         venv_python = os.path.join(virtualenv, 'bin', 'python')

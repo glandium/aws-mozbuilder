@@ -30,7 +30,12 @@ class BuilderWorker(Worker):
 
     @cached_property
     def _queue(self):
-        return iter(Pushlog({ self._config.branch: self._config.after }))
+        if self._config.pulse_user and self._config.pulse_password:
+            pulse = (self._config.pulse_user, self._config.pulse_password)
+        else:
+            pulse = False
+        return iter(Pushlog({ self._config.branch: self._config.after },
+            pulse=pulse))
 
     @cached_property
     def _queue_name(self):

@@ -14,7 +14,7 @@ from util import (
 class Config(Singleton):
     _slots = set(['instanceId', 'max_idle', 'region', 'type', 'branch',
         'after', 'mozconfig', 'patch', 'tooltool_manifest',
-        'tooltool_base'])
+        'tooltool_base', 'pulse_user', 'pulse_password'])
 
     def __getattr__(self, name):
         if name not in Config._slots:

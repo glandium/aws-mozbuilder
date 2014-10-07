@@ -19,9 +19,12 @@ from Queue import Queue, Empty
 class PulseListener(object):
     instance = None
 
-    def __init__(self, filter_callback):
+    def __init__(self, filter_callback, auth=()):
+        assert isinstance(auth, tuple)
+        assert len(auth) == 2
         self.shutting_down = False
         self._filter = filter_callback
+        self._auth = auth
 
         # Let's generate a unique label for the script
         try:
@@ -87,9 +90,11 @@ class PulseListener(object):
             if self._filter(data):
                 self.queue.put(data)
 
+        user, password = self._auth
         while not self.shutting_down:
             # Connect to pulse
-            pulse = consumers.BuildConsumer(applabel=self.applabel)
+            pulse = consumers.BuildConsumer(applabel=self.applabel,
+                user=user, password=password)
 
             # Tell pulse that you want to listen for all messages ('#' is
             # everything) and give a function to call every time there is a
@@ -99,13 +104,16 @@ class PulseListener(object):
             # Manually do the work of pulse.listen() so as to be able to cleanly
             # get out of it if necessary.
             exchange = Exchange(pulse.exchange, type='topic')
-            queue = pulse._create_queue(pulse.applabel, exchange,
-                pulse.topic[0])
+            queue = pulse._create_queue(exchange, pulse.topic[0])
             try:
-                consumer = pulse.connection.Consumer(queue,
+                consumer = pulse.connection.Consumer(queue, auto_declare=False,
                     callbacks=[pulse.callback])
             except socket.error:
                 continue
+            consumer.queues[0].queue_declare()
+            # Bind to the first key.
+            consumer.queues[0].queue_bind()
+
             with consumer:
                 while not self.shutting_down:
                     try:
@@ -147,7 +155,7 @@ class PulseListener(object):
 
 
 class Pushlog(object):
-    def __init__(self, branches, pulse=True):
+    def __init__(self, branches, pulse=False):
         assert isinstance(branches, (list, dict))
         # Normalize branches.
         if isinstance(branches, list):
@@ -161,7 +169,8 @@ class Pushlog(object):
 
     def __iter__(self):
         if self._pulse:
-            pulse = PulseListener(lambda data: data['branch'] in self.branches)
+            pulse = PulseListener(lambda data: data['branch'] in self.branches,
+                auth=self._pulse)
         else:
             class DummyPulse(object):
                 def __iter__(self):
