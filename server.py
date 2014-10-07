@@ -161,8 +161,8 @@ def virtualenv_main():
 def main():
     base = os.path.dirname(__file__)
     virtualenv = os.path.join(base, 'venv')
+    h = Harness()
     if not hasattr(sys, 'real_prefix'):
-        h = Harness()
         # Create virtualenv if it doesn't exist.
         if not os.path.exists(virtualenv):
             virtualenv_cmd = os.path.join(base, 'virtualenv/virtualenv.py')
@@ -172,13 +172,14 @@ def main():
                 updater = SelfUpdater()
                 updater.maybe_update()
             h.execute_command([sys.executable, virtualenv_cmd, virtualenv])
-        # Ensure all dependencies are there and up-to-date.
-        h.execute_command([os.path.join(virtualenv, 'bin', 'pip'), 'install',
-            '--upgrade', 'MozillaPulse', 'boto'])
         # Reexecute in virtualenv
         h._logger.warning('Start in venv.')
         venv_python = os.path.join(virtualenv, 'bin', 'python')
         os.execl(venv_python, venv_python, __file__)
+
+    # Ensure all dependencies are there and up-to-date.
+    h.execute_command([os.path.join(virtualenv, 'bin', 'pip'), 'install',
+        '--upgrade', 'MozillaPulse', 'boto'])
 
     virtualenv_main()
 
