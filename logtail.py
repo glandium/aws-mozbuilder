@@ -8,6 +8,7 @@ import time
 from config import Config
 from util import cached_property
 from worker import Worker
+from dateutil.parser import parse as dateparse
 
 class Formatter(logging.Formatter):
     def format(self, record):
@@ -38,8 +39,9 @@ class LogTailWorker(Worker):
     def _queue_name(self):
         return '%s-logs' % self._config.type
 
-    def _handle_message(self, msg):
-        body = msg.get_body()
+    def _handle_message(self, data, msg):
+        msg.ack()
+        body = data['payload']
         record = {}
 
         for key, logging_key in self.MAPPING.items():
@@ -49,7 +51,8 @@ class LogTailWorker(Worker):
             if key not in self.MAPPING:
                 record[key] = body[key]
 
-        record['created'] = float(msg.attributes['SentTimestamp']) / 1000
+        record['created'] = \
+            time.mktime(dateparse(data['_meta']['sent']).timetuple())
         record['levelno'] = getattr(logging, record['levelname'])
         rec = logging.makeLogRecord(record)
         self._logger.handle(rec)

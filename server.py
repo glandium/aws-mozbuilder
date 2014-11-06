@@ -138,10 +138,10 @@ def virtualenv_main():
             updater.maybe_update()
             if worker is None:
                 try:
-                    from worker import SQSLoggingHandler
+                    from worker import LoggingHandler
                     from builder import BuilderWorker
                     logger = logging.getLogger('Worker')
-                    logger.addHandler(SQSLoggingHandler())
+                    logger.addHandler(LoggingHandler())
                     worker = BuilderWorker(updater.revision())
                 except:
                     import traceback

@@ -7,7 +7,6 @@ import hashlib
 import os
 import subprocess
 import time
-from boto.sqs.jsonmessage import JSONMessage
 from botohelpers import S3Connection
 from contextlib import closing
 from pushlog import Pushlog

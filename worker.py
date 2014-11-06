@@ -4,17 +4,31 @@
 
 import logging
 import time
-from boto.sqs.jsonmessage import JSONMessage
-from botohelpers import SQSConnection
 from config import Config
 from util import cached_property
 
+from mozillapulse.publishers import GenericPublisher
+from mozillapulse.consumers import GenericConsumer
+from mozillapulse.config import PulseConfiguration
+from mozillapulse.messages.base import GenericMessage
 
-class SQSLoggingHandler(logging.Handler):
+
+def PulseExchange(cls, config, **kwargs):
+    return cls(PulseConfiguration(**kwargs),
+        'exchange/%s/%s' % (config.pulse_user, config.type),
+        user=config.pulse_user, password=config.pulse_password, **kwargs)
+
+
+class LogMessage(GenericMessage):
+    def __init__(self):
+        super(LogMessage, self).__init__()
+        self.routing_parts.append('log')
+
+
+class LoggingHandler(logging.Handler):
     def __init__(self):
         config = Config()
-        sqs_conn = SQSConnection()
-        self._queue = sqs_conn.get_queue('%s-logs' % config.type)
+        self._queue = PulseExchange(GenericPublisher, config)
         self._instanceId = config.instanceId
         logging.Handler.__init__(self)
         self._dummy_record = logging.LogRecord('', 0, '', 0, '', (), None)
@@ -22,16 +36,16 @@ class SQSLoggingHandler(logging.Handler):
     def emit(self, record):
         if not self._queue:
             return
-        m = JSONMessage()
-        m['level'] = record.levelname
-        m['name'] = record.name
-        m['instanceId'] = self._instanceId
-        m['message'] = record.msg
+        m = LogMessage()
+        m.set_data('level', record.levelname)
+        m.set_data('name', record.name)
+        m.set_data('instanceId', self._instanceId)
+        m.set_data('message', record.msg)
         # Record any extra data attached to the record.
         for key, value in record.__dict__.items():
             if key not in self._dummy_record.__dict__:
-                m[key] = value
-        self._queue.write(m)
+                m.set_data(key, value)
+        self._queue.publish(m)
 
 
 class Worker(object):
@@ -51,10 +65,9 @@ class Worker(object):
 
     @cached_property
     def _queue(self):
-        queue = SQSConnection().get_queue(self._queue_name)
-        if queue:
-            queue.set_message_class(JSONMessage)
-        return queue
+        import uuid
+        return PulseExchange(GenericConsumer, self._config,
+            applabel=str(uuid.uuid4()))
 
     def shutdown(self):
         if not self._running:
@@ -66,24 +79,5 @@ class Worker(object):
         if not self._running:
             return
 
-        m = self._queue.get_messages(
-            num_messages=1,
-            visibility_timeout=7200,
-            attributes='SentTimestamp',
-            wait_time_seconds=20,
-        )
-        if len(m) != 1:
-            if self._config.max_idle and \
-                    time.time() - self._idle_since > self._config.max_idle:
-                self.shutdown()
-            return
-
-        m = m[0]
-        try:
-            self._handle_message(m)
-            self._queue.delete_message(m)
-        except:
-            import traceback
-            self._logger.error(traceback.format_exc())
-            m.change_visibility(0)
-        self._idle_since = time.time()
+        self._queue.configure(topic=['#'], callback=self._handle_message)
+        self._queue.listen()

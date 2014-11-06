@@ -2,7 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import boto.utils
 import os
 import socket
 from util import (
@@ -42,6 +41,7 @@ class Config(Singleton):
     def _identity(self):
         try:
             if self.is_instance:
+                import boto.utils
                 return boto.utils.get_instance_identity()['document']
         except:
             pass
